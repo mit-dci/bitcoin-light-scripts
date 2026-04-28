@@ -51,8 +51,16 @@ async def handle_message(msg):
 
     data = json.loads(msg)
 
+    # New block notification (live) — comes as data["block"]
+    new_block = None
     if "block" in data:
-        height = data["block"].get("height", 0)
+        new_block = data["block"]
+    # Initial snapshot on connect — comes as data["blocks"] (list, newest first)
+    elif "blocks" in data and isinstance(data["blocks"], list) and data["blocks"]:
+        new_block = data["blocks"][0]
+
+    if new_block:
+        height = new_block.get("height", 0)
         if height > last_block_height:
             last_block_height = height
             print(f"New block: {height}")
@@ -63,7 +71,6 @@ async def handle_message(msg):
         if count > last_mempool_count:
             blink()
         last_mempool_count = count
-
 
 async def run():
     ssl_context = ssl.create_default_context(cafile=certifi.where())
