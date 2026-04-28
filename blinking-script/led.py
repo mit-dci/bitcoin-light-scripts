@@ -13,9 +13,6 @@ PIN = 27
 last_block_height = 0
 last_mempool_count = 0
 
-# Single PWM instance, created at startup
-pi_pwm = None
-
 
 def blink():
     """Quick on/off pulse triggered by mempool activity."""
@@ -27,21 +24,26 @@ def blink():
 
 async def fade_in():
     """Long fade animation triggered by new block."""
-    fades = 60
-    speed = 1
-    for i in range(fades):
-        for duty in range(0, 101, speed):
-            pi_pwm.ChangeDutyCycle(duty)
-            await asyncio.sleep(0.01)
-        if i != fades - 1:
-            for duty in range(100, 0, -speed):
+    pi_pwm = GPIO.PWM(PIN, 1000)
+    pi_pwm.start(0)
+    try:
+        fades = 60
+        speed = 1
+        for i in range(fades):
+            for duty in range(0, 101, speed):
                 pi_pwm.ChangeDutyCycle(duty)
                 await asyncio.sleep(0.01)
-        speed += 1
-    await asyncio.sleep(0.5)
-    # Hold the LED on for 10 seconds after fade completes
-    pi_pwm.ChangeDutyCycle(100)
-    await asyncio.sleep(10)
+            if i != fades - 1:
+                for duty in range(100, 0, -speed):
+                    pi_pwm.ChangeDutyCycle(duty)
+                    await asyncio.sleep(0.01)
+            speed += 1
+        await asyncio.sleep(0.5)
+        pi_pwm.ChangeDutyCycle(100)
+        await asyncio.sleep(10)
+    finally:
+        pi_pwm.stop()
+        GPIO.output(PIN, GPIO.LOW)
 
 
 async def handle_message(msg):
@@ -88,17 +90,12 @@ async def run():
 
 
 def setup_gpio():
-    global pi_pwm
     GPIO.setmode(GPIO.BCM)
     GPIO.setwarnings(False)
     GPIO.setup(PIN, GPIO.OUT)
-    pi_pwm = GPIO.PWM(PIN, 1000)
-    pi_pwm.start(0)
 
 
 def cleanup_gpio():
-    if pi_pwm is not None:
-        pi_pwm.stop()
     GPIO.cleanup()
 
 
