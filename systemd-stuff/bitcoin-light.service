@@ -1,0 +1,13 @@
+[Unit]
+Description=BTCLight
+After=network.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+User=dci
+ExecStart=/usr/bin/python /home/dci/Documents/bitcoin-light/led.py
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
