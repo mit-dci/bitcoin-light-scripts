@@ -1,7 +1,6 @@
 import asyncio
 import json
 import ssl
-import time
 import certifi
 import websockets
 import RPi.GPIO as GPIO
@@ -9,17 +8,24 @@ import RPi.GPIO as GPIO
 WS_URL = "wss://mempool.space/api/v1/ws"
 PIN = 27
 
+BLINK_ON = 0.03
+BATCH_WINDOW = 0.9  # mempool-txids messages arrive about once per second
+MAX_BLINKS = 8
+
 # State
 last_block_height = 0
-last_mempool_count = 0
+blink_task = None
 
 
-def blink():
-    """Quick on/off pulse triggered by mempool activity."""
-    GPIO.output(PIN, GPIO.HIGH)
-    time.sleep(0.03)
-    GPIO.output(PIN, GPIO.LOW)
-    time.sleep(0.03)
+async def blink_batch(n):
+    """One pulse per new mempool tx, spread across the batch window."""
+    n = min(n, MAX_BLINKS)
+    gap = BATCH_WINDOW / n
+    for _ in range(n):
+        GPIO.output(PIN, GPIO.HIGH)
+        await asyncio.sleep(BLINK_ON)
+        GPIO.output(PIN, GPIO.LOW)
+        await asyncio.sleep(max(gap - BLINK_ON, BLINK_ON))
 
 
 async def fade_in():
@@ -47,7 +53,7 @@ async def fade_in():
 
 
 async def handle_message(msg):
-    global last_block_height, last_mempool_count
+    global last_block_height, blink_task
 
     data = json.loads(msg)
 
@@ -66,11 +72,11 @@ async def handle_message(msg):
             print(f"New block: {height}")
             asyncio.create_task(fade_in())
 
-    if "mempoolInfo" in data:
-        count = data["mempoolInfo"].get("size", 0)
-        if count > last_mempool_count:
-            blink()
-        last_mempool_count = count
+    added = len(data.get("mempool-txids", {}).get("added", []))
+    if added:
+        if blink_task and not blink_task.done():
+            blink_task.cancel()
+        blink_task = asyncio.create_task(blink_batch(added))
 
 async def run():
     ssl_context = ssl.create_default_context(cafile=certifi.where())
@@ -80,9 +86,9 @@ async def run():
             async with websockets.connect(WS_URL, ssl=ssl_context) as ws:
                 await ws.send(json.dumps({
                     "action": "want",
-                    "data": ["blocks", "stats"]
+                    "data": ["blocks"]
                 }))
-                await ws.send(json.dumps({"action": "track-mempool"}))
+                await ws.send(json.dumps({"track-mempool-txids": True}))
                 print("Connected and subscribed")
 
                 async for message in ws:
